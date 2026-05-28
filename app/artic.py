@@ -1,6 +1,9 @@
 import httpx
+from cachetools import TTLCache
 
 BASE_URL = "https://api.artic.edu/api/v1"
+
+_cache: TTLCache[int, dict] = TTLCache(maxsize=1024, ttl=86400)
 
 
 class ArticNotFound(Exception):
@@ -12,11 +15,14 @@ class ArticUpstreamError(Exception):
 
 
 async def fetch_artwork(artwork_id: int) -> dict:
-    """Fetch an artwork by its Art Institute id.
+    """Fetch an artwork by its Art Institute id, with in-process TTL-LRU caching.
 
     Returns: {"external_id": int, "title": str}
     Raises:  ArticNotFound (404), ArticUpstreamError (5xx / network).
     """
+    if artwork_id in _cache:
+        return _cache[artwork_id]
+
     url = f"{BASE_URL}/artworks/{artwork_id}"
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -31,4 +37,6 @@ async def fetch_artwork(artwork_id: int) -> dict:
     response.raise_for_status()
 
     data = response.json()["data"]
-    return {"external_id": data["id"], "title": data["title"]}
+    result = {"external_id": data["id"], "title": data["title"]}
+    _cache[artwork_id] = result
+    return result
