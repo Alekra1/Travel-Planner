@@ -8,6 +8,7 @@ A small REST API for planning trips. A **project** is a trip; it contains **plac
 - **FastAPI** + **Uvicorn**
 - **SQLAlchemy 2** with **SQLite**
 - **httpx** for the external API client
+- **cachetools** for in-process TTL-LRU caching of Art Institute responses
 - **Docker** + **docker compose** for local runs
 
 ## Run with Docker (recommended)
@@ -51,7 +52,7 @@ uv run python -c "import json; from app.main import app; print(json.dumps(app.op
 | Method | Path | Behaviour |
 |---|---|---|
 | `POST` | `/projects` | Create project. Optional `places: [{external_id}]` array (max 10); each is validated against the Art Institute API before save. |
-| `GET` | `/projects` | List all projects (with nested places). |
+| `GET` | `/projects` | List projects (paginated). Query params: `limit` (1-100, default 20), `offset` (≥0, default 0). Response is `{items, total, limit, offset}`. |
 | `GET` | `/projects/{id}` | Single project. |
 | `PATCH` | `/projects/{id}` | Update `name` / `description` / `start_date`. |
 | `DELETE` | `/projects/{id}` | `204 No Content` on success; **`409`** if any place in the project is already visited. |
@@ -61,6 +62,10 @@ uv run python -c "import json; from app.main import app; print(json.dumps(app.op
 | `PATCH` | `/projects/{id}/places/{place_id}` | Update `notes` and/or `visited`. |
 
 A project's `completed` flag is **derived**, not stored: `len(places) > 0 and all(p.visited for p in places)`. It is computed on each response, so it can never drift from the underlying place state.
+
+### Caching
+
+`GET https://api.artic.edu/api/v1/artworks/{id}` responses are cached in-process with `cachetools.TTLCache` (`maxsize=1024`, `ttl=86400`). Adding the same artwork to multiple projects hits the API once per day at most. The cache is per worker process — fine for a single-instance deploy; for multi-worker or multi-instance setups you'd swap it for Redis.
 
 ### Error responses
 
@@ -103,6 +108,13 @@ Try to delete a project that has visited places — blocked with `409`:
 curl -i -X DELETE localhost:8000/projects/1
 ```
 
+Paginate the project list:
+
+```bash
+curl -s 'localhost:8000/projects?limit=2&offset=0'
+# → {"items":[...2 projects...],"total":3,"limit":2,"offset":0}
+```
+
 ## Project layout
 
 ```
@@ -122,8 +134,9 @@ docker-compose.yml
 
 ## Design notes
 
-In scope:
 - Validation at API and DB layers — max 10 places per project, unique `(project_id, external_id)`, name length, etc.
 - External API validation: places are verified against the Art Institute before being stored, and the artwork title is cached locally for display.
 - `completed` is derived rather than stored, preventing drift.
 - Foreign-key cascade so deleting a project deletes its places (still gated by the "no visited places" rule).
+- Pagination on `GET /projects` (`limit`/`offset` query params, envelope response).
+- In-process TTL-LRU caching of Art Institute responses.
