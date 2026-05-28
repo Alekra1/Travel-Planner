@@ -50,3 +50,10 @@ class ProjectOut(BaseModel):
     @property
     def completed(self) -> bool:
         return len(self.places) > 0 and all(p.visited for p in self.places)
+
+
+class ProjectList(BaseModel):
+    items: list[ProjectOut]
+    total: int
+    limit: int
+    offset: int

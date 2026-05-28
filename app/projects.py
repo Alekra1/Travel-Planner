@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import models, schemas
@@ -39,9 +39,17 @@ async def create_project(payload: schemas.ProjectCreate, db: Session = Depends(g
     return project
 
 
-@router.get("", response_model=list[schemas.ProjectOut])
-def list_projects(db: Session = Depends(get_db)):
-    return db.scalars(select(models.Project)).all()
+@router.get("", response_model=schemas.ProjectList)
+def list_projects(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
+    total = db.scalar(select(func.count()).select_from(models.Project))
+    items = db.scalars(
+        select(models.Project).order_by(models.Project.id).limit(limit).offset(offset)
+    ).all()
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
 @router.get("/{project_id}", response_model=schemas.ProjectOut)
