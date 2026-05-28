@@ -1,0 +1,12 @@
+  .venv
+  __pycache__
+  *.pyc
+  .git
+  .gitignore
+  data/*.db
+  data/*.db-journal
+  .python-version
+  README.md
+  .claude
+  .idea
+  .vscode
